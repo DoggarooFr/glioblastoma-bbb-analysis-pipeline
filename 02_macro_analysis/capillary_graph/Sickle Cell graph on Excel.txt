@@ -1,0 +1,57 @@
+Sub CreateCapillaryGraphs()
+    Dim ws As Worksheet
+    Dim chartObj As ChartObject
+    Dim i As Integer, j As Integer
+    Dim columnPairs As Variant
+    Dim chartTitleCells As Variant
+    Dim chartTitle As String
+    Dim xRange As Range, yRange As Range
+
+    ' Define the column pairs for XY scatter plots
+    columnPairs = Array(Array("B", "F"), Array("B", "M"), Array("B", "T"), Array("B", "AA"), Array("B", "AH"), _
+                        Array("B", "AO"), Array("B", "AV"), Array("B", "BC"), Array("B", "BJ"), _
+                        Array("B", "BQ"), Array("B", "BX"))
+
+    ' Define the cells containing chart titles
+    chartTitleCells = Array("A1", "H1", "O1", "V1", "AC1", "AJ1", "AQ1", "AX1", "BE1", "BL1", "BS1")
+
+    ' Loop through sheets 1 to 15
+    For i = 1 To 15
+        Set ws = ThisWorkbook.Sheets(i)
+
+        ' Create scatter plots for each column pair
+        For j = LBound(columnPairs) To UBound(columnPairs)
+            ' Get the chart title from the corresponding cell
+            chartTitle = ws.Range(chartTitleCells(j)).Value
+
+            Set chartObj = ws.ChartObjects.Add(Left:=100, Width:=375, Top:=50 + (j * 250), Height:=225)
+            
+            ' Define X and Y ranges for the scatter plot
+            Set xRange = ws.Range(ws.Cells(1, columnPairs(j)(0)), ws.Cells(2500, columnPairs(j)(0)))
+            Set yRange = ws.Range(ws.Cells(1, columnPairs(j)(1)), ws.Cells(2500, columnPairs(j)(1)))
+            
+            With chartObj.Chart
+                .ChartType = xlXYScatterSmoothNoMarkers
+                .SeriesCollection.NewSeries
+                .SeriesCollection(1).XValues = xRange
+                .SeriesCollection(1).Values = yRange
+                
+                ' Add a trendline to the chart
+                .SeriesCollection(1).Trendlines.Add Type:=xlMovingAvg, Period:=100
+
+                ' Set the chart title
+                .HasTitle = True
+                .chartTitle.Text = chartTitle
+
+                ' Remove the legend
+                .HasLegend = False
+
+                ' Set axis titles
+                .Axes(xlCategory, xlPrimary).HasTitle = True
+                .Axes(xlCategory, xlPrimary).AxisTitle.Text = "Time(s)"
+                .Axes(xlValue, xlPrimary).HasTitle = True
+                .Axes(xlValue, xlPrimary).AxisTitle.Text = "Peak Velocity Change(mm/s)"
+            End With
+        Next j
+    Next i
+End Sub

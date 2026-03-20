@@ -1,0 +1,43 @@
+Sub CreateCapillaryGraphs()
+    Dim ws As Worksheet
+    Dim chartObj As ChartObject
+    Dim i As Integer, j As Integer
+    Dim columnPairs As Variant
+    Dim chartTitle As String
+    Dim xRange As Range, yRange As Range
+
+    ' Define the column pairs for XY scatter plots
+    columnPairs = Array(Array("B", "D"), Array("G", "I"), Array("L", "N"), Array("Q", "S"), Array("V", "X"), _
+                        Array("AA", "AC"), Array("AF", "AH"), Array("AK", "AM"), Array("AP", "AR"), _
+                        Array("AU", "AW"), Array("AZ", "BB"), Array("BE", "BG"))
+
+    For i = 1 To 7
+        Set ws = ThisWorkbook.Sheets(i)
+
+        ' Create scatter plots for each column pair
+        For j = LBound(columnPairs) To UBound(columnPairs)
+            Set chartObj = ws.ChartObjects.Add(Left:=100, Width:=375, Top:=50 + (j * 250), Height:=225)
+            chartTitle = "Capillary " & (j + 1)
+            
+            ' Define X and Y ranges for the scatter plot
+            Set xRange = ws.Range(ws.Cells(1, columnPairs(j)(0)), ws.Cells(6800, columnPairs(j)(0)))
+            Set yRange = ws.Range(ws.Cells(1, columnPairs(j)(1)), ws.Cells(6800, columnPairs(j)(1)))
+            
+            With chartObj.Chart
+                .ChartType = xlXYScatterSmoothNoMarkers
+                .SeriesCollection.NewSeries
+                .SeriesCollection(1).XValues = xRange
+                .SeriesCollection(1).Values = yRange
+                
+                ' Add a trendline to the chart
+                .SeriesCollection(1).Trendlines.Add Type:=xlMovingAvg, Period:=400
+                
+                .HasTitle = True
+                .chartTitle.Text = chartTitle
+                
+                ' Remove the legend
+                .HasLegend = False
+            End With
+        Next j
+    Next i
+End Sub

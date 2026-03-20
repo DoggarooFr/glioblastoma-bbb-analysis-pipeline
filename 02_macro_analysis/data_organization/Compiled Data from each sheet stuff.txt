@@ -1,0 +1,183 @@
+
+--------------------------------------------------------------------------
+
+Sub ProcessAndCompileSheets()
+    Dim ws As Worksheet, wsCompiled As Worksheet
+    Dim lastCol As Long
+    Dim sheetIndex As Long
+    Dim dataRow6 As Variant, dataRow13 As Variant, dataRow14 As Variant
+    Dim averages() As Variant
+    Dim iAA As Long, iSS As Long
+    Dim iCol As Long, iRow As Long
+    Dim maxRowAA As Long, maxRowSS As Long
+
+    ' Initialize row counters for AA and SS
+    iAA = 2  ' Start from row 2 for AA in the compiled sheet
+    iSS = 2  ' Start from row 2 for SS in the compiled sheet
+
+    ' Check if "Compiled Data" sheet exists and create it if not
+    On Error Resume Next
+    Set wsCompiled = ThisWorkbook.Worksheets("Compiled Data")
+    On Error GoTo 0
+    If wsCompiled Is Nothing Then
+        Set wsCompiled = ThisWorkbook.Worksheets.Add
+        wsCompiled.Name = "Compiled Data"
+    End If
+
+    wsCompiled.Cells.Clear  ' Clear existing data
+
+    ' Headers for AA and SS in the compiled sheet
+    wsCompiled.Cells(1, 1).Value = "AA"
+    wsCompiled.Cells(1, 6).Value = "SS"
+    wsCompiled.Cells(1, 10).Value = "Sheet Name"  ' Additional headers for averages
+    wsCompiled.Cells(1, 11).Value = "Avg Baseline"
+    wsCompiled.Cells(1, 12).Value = "Avg Peak"
+    wsCompiled.Cells(1, 13).Value = "Avg Change"
+
+    sheetIndex = 0
+    ReDim averages(ThisWorkbook.Worksheets.Count - 2, 3)  ' Resize the array to hold data
+
+    For Each ws In ThisWorkbook.Worksheets
+        If ws.Name <> "Compiled Data" Then
+            With ws
+                ' Find the last used column in the first row
+                lastCol = .Cells(1, .Columns.Count).End(xlToLeft).Column
+
+                ' Collect data from rows 6, 14, and 15 from column A to the last used column
+                dataRow6 = Application.Average(.Range(.Cells(6, 1), .Cells(6, lastCol)))
+                dataRow13 = Application.Average(.Range(.Cells(14, 1), .Cells(14, lastCol)))
+                dataRow14 = Application.Average(.Range(.Cells(15, 1), .Cells(15, lastCol)))
+
+                ' Store sheet name and averages in the array
+                averages(sheetIndex, 0) = .Name
+                averages(sheetIndex, 1) = dataRow6
+                averages(sheetIndex, 2) = dataRow13
+                averages(sheetIndex, 3) = dataRow14
+                sheetIndex = sheetIndex + 1
+            End With
+        End If
+    Next ws
+
+    ' Write the sheet names and averages into the "Compiled Data" sheet
+    For i = LBound(averages, 1) To UBound(averages, 1)
+        wsCompiled.Cells(i + 2, 10).Value = averages(i, 0)  ' Sheet name in column J
+        wsCompiled.Cells(i + 2, 11).Value = averages(i, 1)  ' Average of row 6 in column K
+        wsCompiled.Cells(i + 2, 12).Value = averages(i, 2)  ' Average of row 13 in column L
+        wsCompiled.Cells(i + 2, 13).Value = averages(i, 3)  ' Average of row 14 in column M
+    Next i
+
+    For Each ws In ThisWorkbook.Worksheets
+        If ws.Name <> "Compiled Data" Then
+            With ws
+                ' Find the last used column in the first row
+                lastCol = .Cells(1, .Columns.Count).End(xlToLeft).Column
+
+                ' Collect data from rows 6, 14, and 15 from column A to the last used column
+                dataRow6 = .Range(.Cells(6, 1), .Cells(6, lastCol)).Value
+                dataRow13 = .Range(.Cells(14, 1), .Cells(14, lastCol)).Value
+                dataRow14 = .Range(.Cells(15, 1), .Cells(15, lastCol)).Value
+
+                ' Transpose and place in current sheet
+                targetCol = lastCol + 2
+                .Cells(1, targetCol).Resize(UBound(dataRow6, 2), 1).Value = Application.WorksheetFunction.Transpose(dataRow6)
+                .Cells(1, targetCol + 1).Resize(UBound(dataRow13, 2), 1).Value = Application.WorksheetFunction.Transpose(dataRow13)
+                .Cells(1, targetCol + 2).Resize(UBound(dataRow14, 2), 1).Value = Application.WorksheetFunction.Transpose(dataRow14)
+
+                ' Set the width of the new columns
+                .Columns(targetCol).ColumnWidth = 22.14
+                .Columns(targetCol + 1).ColumnWidth = 22.14
+                .Columns(targetCol + 2).ColumnWidth = 22.14
+
+                ' Compile data for AA or SS into the "Compiled Data" sheet
+                If InStr(1, .Name, "AA") > 0 Then
+                    For i = 1 To UBound(dataRow6, 2)
+                        wsCompiled.Cells(iAA, 1).Value = dataRow6(1, i)
+                        wsCompiled.Cells(iAA, 2).Value = dataRow13(1, i)
+                        wsCompiled.Cells(iAA, 3).Value = dataRow14(1, i)
+                        iAA = iAA + 1
+                    Next i
+                ElseIf InStr(1, .Name, "SS") > 0 Then
+                    For i = 1 To UBound(dataRow6, 2)
+                        wsCompiled.Cells(iSS, 6).Value = dataRow6(1, i)
+                        wsCompiled.Cells(iSS, 7).Value = dataRow13(1, i)
+                        wsCompiled.Cells(iSS, 8).Value = dataRow14(1, i)
+                        iSS = iSS + 1
+                    Next i
+                End If
+            End With
+        End If
+    Next ws
+
+    ' Remove non-numeric strings in specified columns and shift up in "Compiled Data"
+    maxRowAA = wsCompiled.Cells(wsCompiled.Rows.Count, 1).End(xlUp).Row
+    maxRowSS = wsCompiled.Cells(wsCompiled.Rows.Count, 6).End(xlUp).Row
+
+    For Each col In Array(1, 2, 3, 6, 7, 8) ' Columns A, B, C, F, G, H
+        If col <= 3 Then
+            For iRow = 3 To maxRowAA
+                If Not IsNumeric(wsCompiled.Cells(iRow, col).Value) And wsCompiled.Cells(iRow, col).Value <> "" Then
+                    wsCompiled.Cells(iRow, col).Delete Shift:=xlUp
+                    maxRowAA = wsCompiled.Cells(wsCompiled.Rows.Count, col).End(xlUp).Row
+                End If
+            Next iRow
+        Else
+            For iRow = 3 To maxRowSS
+                If Not IsNumeric(wsCompiled.Cells(iRow, col).Value) And wsCompiled.Cells(iRow, col).Value <> "" Then
+                    wsCompiled.Cells(iRow, col).Delete Shift:=xlUp
+                    maxRowSS = wsCompiled.Cells(wsCompiled.Rows.Count, col).End(xlUp).Row
+                End If
+            Next iRow
+        End If
+    Next col
+
+    MsgBox "Process completed."
+End Sub
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+Sub OrganizeData()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Compiled Data")
+    
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, "J").End(xlUp).Row
+    
+    Dim i As Long
+    Dim targetRowAA As Long: targetRowAA = 2
+    Dim targetRowSS As Long: targetRowSS = 2
+    Dim targetRowM As Long: targetRowM = 2
+    Dim targetRowF As Long: targetRowF = 2
+    
+    ' Headers
+    ws.Range("O1").Value = "AA"
+    ws.Range("T1").Value = "SS"
+    ws.Range("Y1").Value = "Male"
+    ws.Range("AD1").Value = "Female"
+    
+    For i = 1 To lastRow
+        Dim name As String
+        name = ws.Cells(i, "J").Value
+        
+        If InStr(name, "AA") > 0 Then
+            ws.Cells(targetRowAA, "O").Resize(1, 4).Value = ws.Cells(i, "J").Resize(1, 4).Value
+            targetRowAA = targetRowAA + 1
+        ElseIf InStr(name, "SS") > 0 Then
+            ws.Cells(targetRowSS, "T").Resize(1, 4).Value = ws.Cells(i, "J").Resize(1, 4).Value
+            targetRowSS = targetRowSS + 1
+        End If
+        
+        If InStr(name, "M") > 0 Then
+            ws.Cells(targetRowM, "Y").Resize(1, 4).Value = ws.Cells(i, "J").Resize(1, 4).Value
+            targetRowM = targetRowM + 1
+        ElseIf InStr(name, "F") > 0 Then
+            ws.Cells(targetRowF, "AD").Resize(1, 4).Value = ws.Cells(i, "J").Resize(1, 4).Value
+            targetRowF = targetRowF + 1
+        End If
+    Next i
+    
+
+End Sub
+
+
+
+

@@ -1,0 +1,280 @@
+Sub ProcessData()
+    Dim dataSetCols As Collection
+    Dim col As Variant
+    Dim lastCol As Long
+    Dim distances As Range, greenValues As Range, redValues As Range
+    Dim i As Long, j As Long
+    Dim threshold As Double
+    Dim startIdx As Long, endIdx As Long
+    Dim isSpiking As Boolean
+    Dim peakValue As Double, spikeWidth As Double
+    Dim chartObj As ChartObject
+    Dim greenMin As Double
+    Dim firstDerivative() As Double
+    Dim ws As Worksheet
+
+    ' Initialize collections to store values
+    Set dataSetCols = New Collection
+
+    ' Loop through each worksheet in the workbook
+    For Each ws In ThisWorkbook.Worksheets
+
+        ' Clear all existing charts
+        For Each chartObj In ws.ChartObjects
+            chartObj.Delete
+        Next chartObj
+
+        ' Determine the last column 
+        lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+
+        ' Identify the columns containing data sets
+        For i = 1 To lastCol
+            If ws.Cells(1, i).value Like "*Distance*" Then
+                dataSetCols.Add i
+            End If
+        Next i
+
+        For Each col In dataSetCols
+            ' Define the ranges based on the column
+            Set distances = ws.Range(ws.Cells(2, col), ws.Cells(ws.Cells(ws.Rows.Count, col).End(xlUp).Row, col))
+            Set greenValues = ws.Range(ws.Cells(2, col + 1), ws.Cells(ws.Cells(ws.Rows.Count, col + 1).End(xlUp).Row, col + 1))
+            Set redValues = ws.Range(ws.Cells(2, col + 2), ws.Cells(ws.Cells(ws.Rows.Count, col + 2).End(xlUp).Row, col + 2))
+
+            ' Calculate the threshold as 1.2 times the lowest value of Green
+            greenMin = MinNonZero(greenValues)
+            threshold = greenMin * 1.2
+
+            ' Create the chart
+            Set chartObj = ws.ChartObjects.Add(Left:=100, Width:=750, Top:=50 + (350 * (Array_Index(dataSetCols, col) - 1)), Height:=300)
+            With chartObj.Chart
+                ' Set chart type
+                .ChartType = xlXYScatterSmoothNoMarkers
+                ' Clear any existing series
+                Do While .SeriesCollection.Count > 0
+                    .SeriesCollection(1).Delete
+                Loop
+                ' Add Green data 
+                .SeriesCollection.NewSeries
+                With .SeriesCollection(1)
+                    .Name = "Green"
+                    .xValues = distances
+                    .Values = greenValues
+                    .Format.Line.ForeColor.RGB = RGB(0, 255, 0)
+                    .MarkerStyle = xlMarkerStyleNone
+                End With
+                ' Add Red data 
+                .SeriesCollection.NewSeries
+                With .SeriesCollection(2)
+                    .Name = "Red"
+                    .xValues = distances
+                    .Values = redValues
+                    .Format.Line.ForeColor.RGB = RGB(255, 0, 0)
+                    .MarkerStyle = xlMarkerStyleNone
+                End With
+
+                ' Customize the chart
+                .HasTitle = True
+                .ChartTitle.Text = ws.Cells(2, col - 1).value
+                .HasLegend = False
+            End With
+
+            ' Initialize variables
+            isSpiking = False
+            startIdx = 0
+            endIdx = 0
+            ReDim firstDerivative(greenValues.Rows.Count - 1)
+
+            ' Calculate the first derivative
+            For i = 2 To greenValues.Rows.Count
+                firstDerivative(i - 1) = greenValues.Cells(i, 1).value - greenValues.Cells(i - 1).value
+            Next i
+
+            ' Loop through the green signal to find spikes
+            For i = 1 To greenValues.Rows.Count
+                If greenValues.Cells(i, 1).value > threshold Then
+                    If Not isSpiking Then
+                        ' Start of a new spike
+                        startIdx = i
+                        isSpiking = True
+                        peakValue = greenValues.Cells(i, 1).value
+                    End If
+
+                    ' Update peak value if current value is higher
+                    If greenValues.Cells(i, 1).value > peakValue Then
+                        peakValue = greenValues.Cells(i, 1).value
+                    End If
+                ElseIf isSpiking Then
+                    ' Continue to mark the spike until the value drops below the threshold
+                    If greenValues.Cells(i, 1).value <= threshold Then
+                        ' End of the spike
+                        endIdx = i - 1
+                        isSpiking = False
+
+                        ' Calculate spike width
+                        spikeWidth = Round(distances.Cells(endIdx, 1).value, 3) - Round(distances.Cells(startIdx, 1).value, 3)
+
+                        ' Only annotate peaks with width at least 0.5 and peak value at least 1.1 times the threshold
+                        If spikeWidth >= 0.5 And peakValue > threshold * 1.1 Then
+                            ' Check if the peak is a single peak (first derivative positive then negative)
+                            If CheckSinglePeak(firstDerivative, startIdx, endIdx) Then
+                                ' Ensure each end of the peak returns below to the threshold
+                                Do While startIdx > 1 And greenValues.Cells(startIdx, 1).value > threshold
+                                    startIdx = startIdx - 1
+                                Loop
+                                Do While endIdx < greenValues.Rows.Count And greenValues.Cells(endIdx, 1).value > threshold
+                                    endIdx = endIdx + 1
+                                Loop
+                                ' Add annotations and dashed lines to the chart
+                                AddSpikeAnnotations chartObj, distances, greenValues, startIdx, endIdx, peakValue, spikeWidth
+                            End If
+                        End If
+                    End If
+                End If
+            Next i
+        Next col
+    Next ws
+
+    ' Remove duplicate charts based on title
+    RemoveDuplicateCharts
+End Sub
+
+Sub AddSpikeAnnotations(chartObj As ChartObject, distances As Range, greenValues As Range, startIdx As Long, endIdx As Long, peakValue As Double, spikeWidth As Double)
+    Dim xValues() As Double, yValues() As Double
+    Dim i As Long, arrayIdx As Long
+
+    ' Initialize the arrays
+    ReDim xValues(1 To endIdx - startIdx + 1)
+    ReDim yValues(1 To endIdx - startIdx + 1)
+
+    ' Fill the arrays with the relevant values
+    arrayIdx = 1
+    For i = startIdx To endIdx
+        xValues(arrayIdx) = Round(distances.Cells(i, 1).value, 3)
+        yValues(arrayIdx) = greenValues.Cells(i, 1).value
+        arrayIdx = arrayIdx + 1
+    Next i
+
+    ' Add dashed lines for spike start and end
+    With chartObj.Chart.SeriesCollection(1)
+        .Points(startIdx).MarkerStyle = xlMarkerStyleDash
+        .Points(endIdx).MarkerStyle = xlMarkerStyleDash
+    End With
+
+    ' Add annotations for peak value and spike width
+    With chartObj.Chart.SeriesCollection.NewSeries
+        .xValues = xValues
+        .Values = yValues
+        .Name = "Spike " & startIdx
+    End With
+
+    With chartObj.Chart.SeriesCollection.NewSeries
+        .xValues = Array(Round((distances.Cells(startIdx).value + distances.Cells(endIdx).value) / 2, 3))
+        .Values = Array(peakValue + 10) ' Adjust the vertical position of the label
+        .ApplyDataLabels
+        .DataLabels(1).Text = "Peak Value = " & Round(peakValue, 3) & ", Width = " & Round(spikeWidth, 3)
+        .DataLabels(1).Position = xlLabelPositionAbove
+        .DataLabels(1).Characters.Text = "Peak Value = " & Round(peakValue, 3) & ", Width = " & Round(spikeWidth, 3)
+        .DataLabels(1).Width = 200 ' Extend the text box width
+    End With
+End Sub
+
+Function CheckSinglePeak(firstDerivative() As Double, startIdx As Long, endIdx As Long) As Boolean
+    Dim i As Long
+    Dim foundPeak As Boolean
+
+    ' Ensure first derivative is positive then negative
+    foundPeak = False
+    For i = startIdx To endIdx - 1
+        If firstDerivative(i) > 0 Then
+            If foundPeak Then
+                CheckSinglePeak = False
+                Exit Function
+            End If
+        ElseIf firstDerivative(i) < -1 Then
+            foundPeak = True
+        End If
+    Next i
+
+    CheckSinglePeak = True
+End Function
+
+Function Array_Index(ByRef arr As Collection, ByVal value As Variant) As Long
+    Dim i As Long
+    For i = 1 To arr.Count
+        If arr(i) = value Then
+            Array_Index = i
+            Exit Function
+        End If
+    Next i
+    Array_Index = -1 ' Return -1 if not found
+End Function
+Sub RemoveDuplicateCharts()
+    Dim ws As Worksheet
+    Dim chartObj As ChartObject
+    Dim dictChartTitles As Object
+    Dim title As String
+
+    For Each ws In ThisWorkbook.Worksheets
+        Set dictChartTitles = CreateObject("Scripting.Dictionary")  ' Recreate the dictionary for each sheet
+        
+        For Each chartObj In ws.ChartObjects
+            If chartObj.Chart.HasTitle Then
+                On Error Resume Next  ' Use error handling to catch errors accessing title text
+                title = chartObj.Chart.ChartTitle.Text
+                On Error GoTo 0  ' Turn off error handling
+                
+                If title <> "" Then
+                    ' Add title to dictionary or increment count if it already exists
+                    If Not dictChartTitles.Exists(title) Then
+                        dictChartTitles.Add title, chartObj  ' Store the first chart with this title
+                    Else
+                        chartObj.Delete  ' Delete if this title is already seen
+                    End If
+                Else
+                    chartObj.Delete  ' Delete charts with empty titles
+                End If
+            Else
+                chartObj.Delete  ' Delete charts without titles
+            End If
+        Next chartObj
+    Next ws
+End Sub
+
+
+Function CollectionContains(coll As Collection, item As Variant) As Boolean
+    Dim i As Long
+    For i = 1 To coll.Count
+        If coll(i) Is item Then
+            CollectionContains = True
+            Exit Function
+        End If
+    Next i
+    CollectionContains = False
+End Function
+
+Function MinNonZero(rng As Range) As Double
+    Dim cell As Range
+    Dim minValue As Double
+
+    ' Initialize minValue to a very large number
+    minValue = Application.WorksheetFunction.Max(rng) + 1  ' Using Max to ensure it's above any possible value in the range
+
+    ' Start from the second cell in the range to skip the header and loop to the last cell but check for emptiness
+    If Not rng Is Nothing And rng.Cells.Count > 1 Then
+        For Each cell In rng.Offset(1, 0).Resize(rng.Rows.Count - 1, 1)
+            If IsNumeric(cell.value) And cell.value > 0 Then
+                If cell.value < minValue Then
+                    minValue = cell.value
+                End If
+            End If
+        Next cell
+    End If
+
+    ' Check if minValue was updated, return appropriate value
+    If minValue = Application.WorksheetFunction.Max(rng) + 1 Then
+        MinNonZero = 0 ' Return 0 if no non-zero minimum is found or handle error as needed
+    Else
+        MinNonZero = minValue
+    End If
+End Function
+
