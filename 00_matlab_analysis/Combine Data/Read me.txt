@@ -1,0 +1,15 @@
+Instruction for "capillary" MATLAB Code:
+
+>Purpose:
+ This MATLAB code combines specific columns (time, velocity, and absVelocity) from multiple CSV files in a folder into a single CSV file.
+ The new CSV file contains a single sheet of original CSV file name + time data + velocity data + absVelocity data + spacer column and repeate 
+
+>Running the Code:
+ Ensure MATLAB is open.
+ Copy the code to the folder path where all the CSV files are located.
+ Right-click the code file and select "Run" to execute it.
+
+>Editing the Code:
+ If the column headers are different or additional columns need to be added, modify the column heaader search criteria.
+ Adjust corresponding data arrays, ensure that any change in the column selection is reflected throughout the script.
+ Editing with ChatGPT: If you need to modify the code further, copy the entire MATLAB code and clearly specify the changes you need.

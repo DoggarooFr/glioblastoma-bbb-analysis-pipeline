@@ -1,0 +1,14 @@
+Instruction for "Sickle_cell" MATLAB Code:
+>Purpose:
+ This MATLAB script is designed to extract data from multiple '__Summary' Excel files (.xlsx) located across different Veemat folders, which are organized under various subfolders and main folders.
+
+>Running the Code:
+ Ensure MATLAB is open.
+ Copy the code to the main folder path where you wish to run it.
+ Right-click the code file and select "Run" to execute it.
+
+>Editing the Code:
+ Update the main folder name and subfolder name search criteria to match your specific directory structure.
+ Adjust the column indices in the code to specify the columns from which data should be extracted.
+ Editing with ChatGPT:
+ Copy the entire MATLAB code, and clearly specify the changes you need, such as folder paths, column indices, or any additional modifications.
