@@ -1,0 +1,181 @@
+Sub PlotPSvsTime()
+    Dim peakWS As Worksheet
+    Dim chartObj As ChartObject, srs As series
+    Dim Xs As Variant, Ys As Variant
+    Dim i As Long
+    Dim maxY As Double, thresholdY As Double
+    Dim leftIdx As Long, rightIdx As Long
+    Dim XLeft As Double, XRight As Double
+    Dim regionName As Variant, timeVal As Variant
+    Dim regionDict As Object, ltDict As Object, ivDict As Object
+    Dim chartTop As Double: chartTop = 340 ' Adjust below prior charts
+    Dim chartHeight As Double: chartHeight = 300
+    Dim chartWidth As Double: chartWidth = 500
+    Dim Hct As Double: Hct = 0.45
+
+    Set peakWS = ThisWorkbook.Sheets("Peak Aligned Plots")
+    Set regionDict = CreateObject("Scripting.Dictionary")
+
+    ' Step 1: Collect lt and Iv
+    For Each chartObj In peakWS.ChartObjects
+        regionName = chartObj.Chart.ChartTitle.Text
+        ' Skip summary charts
+        If regionName Like "*Diameter*" Or regionName Like "*PS*" Then GoTo SkipChart
+
+        Set ltDict = CreateObject("Scripting.Dictionary")
+        Set ivDict = CreateObject("Scripting.Dictionary")
+
+        For Each srs In chartObj.Chart.SeriesCollection
+            Xs = srs.XValues
+            Ys = srs.Values
+
+            maxY = WorksheetFunction.Max(Ys)
+            thresholdY = 0.5 * maxY
+
+            ' Find indices around X=0
+            leftIdx = -1
+            rightIdx = -1
+            For i = LBound(Xs) To UBound(Xs)
+                If Xs(i) < 0 Then
+                    leftIdx = i
+                ElseIf Xs(i) > 0 And rightIdx = -1 Then
+                    rightIdx = i
+                    Exit For
+                End If
+            Next i
+            If leftIdx = -1 Or rightIdx = -1 Then GoTo SkipSeries
+
+            ' Find threshold crossings
+            XLeft = -1: XRight = -1
+            For i = leftIdx To LBound(Ys) + 1 Step -1
+                If Ys(i - 1) < thresholdY And Ys(i) >= thresholdY Then
+                    XLeft = Xs(i - 1) + ((thresholdY - Ys(i - 1)) * (Xs(i) - Xs(i - 1))) / (Ys(i) - Ys(i - 1))
+                    leftIdx = i
+                    Exit For
+                End If
+            Next i
+            For i = rightIdx To UBound(Ys) - 1
+                If Ys(i) >= thresholdY And Ys(i + 1) < thresholdY Then
+                    XRight = Xs(i) + ((thresholdY - Ys(i)) * (Xs(i + 1) - Xs(i))) / (Ys(i + 1) - Ys(i))
+                    rightIdx = i
+                    Exit For
+                End If
+            Next i
+            If XLeft = -1 Or XRight = -1 Then GoTo SkipSeries
+
+            ' Iv = average Y within 50% max region
+            Dim sumIv As Double: sumIv = 0
+            Dim countIv As Long: countIv = 0
+            For i = leftIdx To rightIdx
+                sumIv = sumIv + Ys(i)
+                countIv = countIv + 1
+            Next i
+            Dim Iv As Double: Iv = sumIv / countIv
+
+            ' lt = average of first 10 and last 10 Y-values
+            Dim sumLt As Double: sumLt = 0
+            For i = 1 To 5
+                sumLt = sumLt + Ys(i)
+            Next i
+            For i = UBound(Ys) - 4 To UBound(Ys)
+                sumLt = sumLt + Ys(i)
+            Next i
+            Dim lt As Double: lt = sumLt / 10
+
+            timeVal = Val(Replace(srs.Name, " hr", ""))
+            ltDict(timeVal) = lt
+            ivDict(timeVal) = Iv
+
+SkipSeries:
+        Next srs
+
+        If ltDict.Count = 0 Then GoTo SkipChart
+
+        ' Step 2: Calculate PS per time step
+        Dim psDict As Object
+        Set psDict = CreateObject("Scripting.Dictionary")
+
+        Dim keys() As Double
+        ReDim keys(1 To ltDict.Count)
+        i = 1
+        For Each timeVal In ltDict.keys
+            keys(i) = timeVal
+            i = i + 1
+        Next timeVal
+        Call BubbleSort(keys)
+
+        For i = 1 To UBound(keys) - 1
+            Dim t1 As Double, t2 As Double, dt As Double, dlt As Double
+            Dim lv As Double
+            t1 = keys(i)
+            t2 = keys(i + 1)
+            dt = t2 - t1
+            dlt = ltDict(t2) - ltDict(t1)
+            lv = ivDict(t1)
+            If dt <> 0 And lv <> 0 Then
+                Dim ps As Double
+                ps = ((1 - Hct) / lv) * (dlt / dt)
+                psDict(t1) = ps
+            End If
+        Next i
+
+        If Not regionDict.Exists(regionName) Then
+            regionDict.Add regionName, psDict
+        Else
+            Set regionDict(regionName) = psDict
+        End If
+
+SkipChart:
+    Next chartObj
+
+    ' Step 3: Plot PS vs Time
+    Dim chartObjFinal As ChartObject
+    Set chartObjFinal = peakWS.ChartObjects.Add(Left:=chartWidth + 50, Width:=chartWidth, Top:=chartTop, Height:=chartHeight)
+    With chartObjFinal.Chart
+        .ChartType = xlXYScatterLines
+        .HasTitle = True
+        .ChartTitle.Text = "PS vs Time"
+    End With
+
+    For Each regionName In regionDict.keys
+        Set psDict = regionDict(regionName)
+        If psDict.Count > 0 Then
+            ReDim keys(1 To psDict.Count)
+            i = 1
+            For Each timeVal In psDict.keys
+                keys(i) = timeVal
+                i = i + 1
+            Next timeVal
+            Call BubbleSort(keys)
+
+            Dim xArr() As Double, yArr() As Double
+            ReDim xArr(1 To UBound(keys))
+            ReDim yArr(1 To UBound(keys))
+            For i = 1 To UBound(keys)
+                xArr(i) = keys(i)
+                yArr(i) = psDict(keys(i))
+            Next i
+
+            With chartObjFinal.Chart.SeriesCollection.NewSeries
+                .XValues = xArr
+                .Values = yArr
+                .Name = regionName
+            End With
+        End If
+    Next regionName
+
+    MsgBox "? PS vs Time (corrected) plotted below diameter chart!", vbInformation
+End Sub
+
+Sub BubbleSort(arr() As Double)
+    Dim i As Long, j As Long, temp As Double
+    For i = LBound(arr) To UBound(arr) - 1
+        For j = i + 1 To UBound(arr)
+            If arr(i) > arr(j) Then
+                temp = arr(i)
+                arr(i) = arr(j)
+                arr(j) = temp
+            End If
+        Next j
+    Next i
+End Sub

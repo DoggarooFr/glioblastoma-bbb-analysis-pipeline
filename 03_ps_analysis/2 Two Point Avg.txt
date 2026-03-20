@@ -1,0 +1,106 @@
+Sub PlotPeakAlignedCurves_InterpolatedDirectional()
+    Dim ws As Worksheet, summaryWS As Worksheet
+    Dim col As Integer, lastRow As Long
+    Dim xVals() As Double, yVals() As Double, normX() As Double
+    Dim timePoint As String, regionName As String
+    Dim chartObj As ChartObject, newChart As Chart
+    Dim chartTop As Double: chartTop = 20
+    Dim chartHeight As Double: chartHeight = 300
+    Dim chartWidth As Double: chartWidth = 500
+    Dim i As Long, startX As Double, endX As Double
+    Dim peakThreshold As Double: peakThreshold = 50 ' 🔧 You can modify this threshold
+
+    ' Create or clear plotting sheet
+    On Error Resume Next
+    Set summaryWS = ThisWorkbook.Worksheets("Peak Aligned Plots")
+    If summaryWS Is Nothing Then
+        Set summaryWS = ThisWorkbook.Sheets.Add
+        summaryWS.Name = "Peak Aligned Plots"
+    Else
+        summaryWS.Cells.Clear
+        For Each chartObj In summaryWS.ChartObjects
+            chartObj.Delete
+        Next chartObj
+    End If
+    On Error GoTo 0
+
+    ' Loop through region sheets
+    For Each ws In ThisWorkbook.Worksheets
+        If ws.Name = "Peak Aligned Plots" Then GoTo SkipSheet
+        If IsEmpty(ws.Cells(1, 1).Value) Then GoTo SkipSheet
+        
+        regionName = ws.Name
+        Set newChart = summaryWS.ChartObjects.Add(Left:=10, Width:=chartWidth, Top:=chartTop, Height:=chartHeight).Chart
+        newChart.ChartType = xlXYScatterLinesNoMarkers
+        newChart.HasTitle = True
+        newChart.ChartTitle.Text = regionName
+
+        col = 1
+        Do While ws.Cells(1, col).Value <> "" Or ws.Cells(1, col + 3).Value <> ""
+            timePoint = ws.Cells(1, col).Value
+            If Not IsEmpty(timePoint) Then
+                lastRow = ws.Cells(ws.Rows.Count, col).End(xlUp).Row
+                If lastRow > 2 Then
+                    ' Load X and Y data
+                    ReDim xVals(1 To lastRow - 1)
+                    ReDim yVals(1 To lastRow - 1)
+		    Dim smoothedY() As Double
+		    ReDim smoothedY(1 To UBound(yVals))
+                    For i = 2 To lastRow
+                        xVals(i - 1) = ws.Cells(i, col).Value
+                        yVals(i - 1) = ws.Cells(i, col + 1).Value
+                    Next i
+		    smoothedY(1) = yVals(1)' -1
+		    'smoothedY(UBound(yVals)) = yVals(UBound(yVals))
+		    For i = 2 To UBound(yVals)
+    			smoothedY(i) = (yVals(i - 1) + yVals(i)) / 2 '(yVals(i - 1) + yVals(i) + yVals(i + 1)) / 3
+		    Next i
+		    yVals = smoothedY
+
+                    ' Directional detection with interpolation
+                    startX = -1
+                    endX = -1
+
+                    ' First crossing (head to tail)
+                    For i = 2 To UBound(yVals)
+                        If yVals(i - 1) < peakThreshold And yVals(i) >= peakThreshold Then
+                            startX = xVals(i - 1) + ((peakThreshold - yVals(i - 1)) * (xVals(i) - xVals(i - 1))) / (yVals(i) - yVals(i - 1))
+                            Exit For
+                        End If
+                    Next i
+
+                    ' Last crossing (tail to head)
+                    For i = UBound(yVals) To 2 Step -1
+                        If yVals(i - 1) >= peakThreshold And yVals(i) < peakThreshold Then
+                            endX = xVals(i - 1) + ((peakThreshold - yVals(i - 1)) * (xVals(i) - xVals(i - 1))) / (yVals(i) - yVals(i - 1))
+                            Exit For
+                        End If
+                    Next i
+
+                    If startX <> -1 And endX <> -1 Then
+                        Dim peakCenter As Double
+                        peakCenter = (startX + endX) / 2
+                        
+                        ' Normalize X values
+                        ReDim normX(1 To UBound(xVals))
+                        For i = 1 To UBound(xVals)
+                            normX(i) = xVals(i) - peakCenter
+                        Next i
+                        
+                        ' Add series
+                        With newChart.SeriesCollection.NewSeries
+                            .XValues = normX
+                            .Values = yVals
+                            .Name = timePoint
+                        End With
+                    End If
+                End If
+            End If
+            col = col + 3
+        Loop
+        chartTop = chartTop + chartHeight + 20
+SkipSheet:
+    Next ws
+    
+    MsgBox "✅ Peak-aligned plots created with optimized interpolation!", vbInformation
+End Sub

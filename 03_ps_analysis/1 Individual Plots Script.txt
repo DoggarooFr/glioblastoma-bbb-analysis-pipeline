@@ -1,0 +1,160 @@
+Sub AnalyzeData()
+    Dim ws As Worksheet
+    Dim col As Integer
+    Dim lastRow As Long
+    Dim xRange As Range, yRange As Range
+    Dim minY As Double, halfMax As Double
+    Dim plot1Row As Long, plot2Row As Long
+    Dim chartObj As ChartObject
+    Dim chartTop As Double
+    Dim chartLeft As Double
+    Dim title As String
+    Dim combinedPlot1 As ChartObject
+    Dim combinedPlot2 As ChartObject
+    
+    ' Iterate over each sheet
+    For Each ws In ThisWorkbook.Sheets
+        If ws.Name <> "Comparison over Time" Then
+            col = 1
+            chartTop = 20
+            chartLeft = 20
+            
+            ' Initialize combined plots on the right of the last set of individual plots
+            Dim combinedPlot1Data As Collection
+            Dim combinedPlot2Data As Collection
+            Set combinedPlot1Data = New Collection
+            Set combinedPlot2Data = New Collection
+            
+            ' Loop through each data set in the sheet
+            Do While ws.Cells(1, col).Value <> ""
+                ' Get the title of the data set
+                title = ws.Cells(1, col).Value
+                
+                ' Get the x and y ranges
+                lastRow = ws.Cells(ws.Rows.Count, col).End(xlUp).Row
+                Set xRange = ws.Range(ws.Cells(2, col), ws.Cells(lastRow, col))
+                Set yRange = ws.Range(ws.Cells(2, col + 1), ws.Cells(lastRow, col + 1))
+                
+                ' Normalize the y values
+                minY = Application.WorksheetFunction.Min(yRange)
+                Dim i As Long
+                For i = 1 To yRange.Rows.Count
+                    ws.Cells(i + 1, col + 1).Value = ws.Cells(i + 1, col + 1).Value - minY
+                Next i
+                
+                ' Calculate the half-max
+                halfMax = Application.WorksheetFunction.Max(yRange) / 2
+                
+                ' Convert Y values to percentage of half-max
+                For i = 1 To yRange.Rows.Count
+                    ws.Cells(i + 1, col + 1).Value = (ws.Cells(i + 1, col + 1).Value / halfMax) * 100
+                Next i
+                
+                ' Find Plot 1 (first data point below half-max)
+                plot1Row = 2
+                Do While ws.Cells(plot1Row, col + 1).Value < 100
+                    plot1Row = plot1Row + 1
+                Loop
+                
+                ' Find Plot 2 (last data point below half-max, working upwards)
+                plot2Row = lastRow
+                Do While ws.Cells(plot2Row, col + 1).Value < 100
+                    plot2Row = plot2Row - 1
+                Loop
+                
+                ' Add data to combined plots
+                combinedPlot1Data.Add Array(xRange, _
+                                            FlipYValues(ws.Range(ws.Cells(2, col + 1), ws.Cells(plot1Row, col + 1))), _
+                                            title)
+                combinedPlot2Data.Add Array(ws.Range(ws.Cells(plot2Row, col), ws.Cells(lastRow, col)), _
+                                            ws.Range(ws.Cells(plot2Row, col + 1), ws.Cells(lastRow, col + 1)), _
+                                            title)
+                
+                ' Individual plots (Overall, Plot 1, Plot 2)
+                ' Overall Plot
+                Set chartObj = ws.ChartObjects.Add(Left:=chartLeft, Width:=300, Top:=chartTop, Height:=150)
+                chartObj.Chart.ChartType = xlLine
+                With chartObj.Chart.SeriesCollection.NewSeries
+                    .XValues = xRange
+                    .Values = yRange
+                End With
+                chartObj.Chart.HasLegend = False
+                chartObj.Chart.Axes(xlCategory).TickLabels.Delete
+                chartObj.Chart.Axes(xlValue).TickLabels.Delete
+                
+                ' Plot 1
+                chartTop = chartTop + 180
+                Set chartObj = ws.ChartObjects.Add(Left:=chartLeft, Width:=300, Top:=chartTop, Height:=150)
+                chartObj.Chart.ChartType = xlLine
+                With chartObj.Chart.SeriesCollection.NewSeries
+                    .XValues = ws.Range(ws.Cells(2, col), ws.Cells(plot1Row, col))
+                    .Values = ws.Range(ws.Cells(2, col + 1), ws.Cells(plot1Row, col + 1))
+                End With
+                chartObj.Chart.HasLegend = False
+                
+                ' Plot 2
+                chartTop = chartTop + 180
+                Set chartObj = ws.ChartObjects.Add(Left:=chartLeft, Width:=300, Top:=chartTop, Height:=150)
+                chartObj.Chart.ChartType = xlLine
+                With chartObj.Chart.SeriesCollection.NewSeries
+                    .XValues = ws.Range(ws.Cells(plot2Row, col), ws.Cells(lastRow, col))
+                    .Values = ws.Range(ws.Cells(plot2Row, col + 1), ws.Cells(lastRow, col + 1))
+                End With
+                chartObj.Chart.HasLegend = False
+                
+                ' Shift to the next data set
+                chartTop = 20
+                chartLeft = chartLeft + 320
+                col = col + 3
+            Loop
+            
+            ' Add combined plots to the right of the last individual plot
+            chartLeft = chartLeft + 20
+            
+            ' Combined Plot 1 (First Half)
+            chartTop = 20
+            Set combinedPlot1 = ws.ChartObjects.Add(Left:=chartLeft, Width:=500, Top:=chartTop, Height:=300)
+            combinedPlot1.Chart.ChartType = xlLine
+            combinedPlot1.Chart.HasTitle = True
+            combinedPlot1.Chart.ChartTitle.Text = "First Half"
+            
+            For Each data In combinedPlot1Data
+                With combinedPlot1.Chart.SeriesCollection.NewSeries
+                    .XValues = data(0)
+                    .Values = data(1)
+                    .Name = data(2) ' Use the data set title as the legend name
+                End With
+            Next data
+            
+            ' Combined Plot 2 (Second Half)
+            chartTop = chartTop + 320
+            Set combinedPlot2 = ws.ChartObjects.Add(Left:=chartLeft, Width:=500, Top:=chartTop, Height:=300)
+            combinedPlot2.Chart.ChartType = xlLine
+            combinedPlot2.Chart.HasTitle = True
+            combinedPlot2.Chart.ChartTitle.Text = "Second Half"
+            
+            For Each data In combinedPlot2Data
+                With combinedPlot2.Chart.SeriesCollection.NewSeries
+                    .XValues = data(0)
+                    .Values = data(1)
+                    .Name = data(2) ' Use the data set title as the legend name
+                End With
+            Next data
+        End If
+    Next ws
+End Sub
+
+' Function to flip Y values and convert to percentage of adjusted half-max
+Function FlipYValues(yRange As Range) As Variant
+    Dim flippedArray() As Double
+    Dim i As Long, n As Long
+
+    n = yRange.Rows.Count
+    ReDim flippedArray(1 To n)
+
+    For i = 1 To n
+        flippedArray(i) = yRange.Cells(n - i + 1, 1).Value ' Already in percentage
+    Next i
+
+    FlipYValues = flippedArray
+End Function

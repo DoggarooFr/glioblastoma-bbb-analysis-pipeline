@@ -1,0 +1,93 @@
+Sub CreateComparisonOverTime()
+    Dim ws As Worksheet
+    Dim comparisonSheet As Worksheet
+    Dim chartObj As ChartObject
+    Dim chartTop As Double, chartLeft As Double
+    Dim col As Integer
+    Dim series As Series
+    Dim dataTitle As Variant
+    Dim sheetName As Variant
+    Dim firstHalfData As Object, secondHalfData As Object
+    
+    ' Create the "Comparison over Time" sheet
+    On Error Resume Next
+    Set comparisonSheet = ThisWorkbook.Sheets("Comparison over Time")
+    On Error GoTo 0
+    If comparisonSheet Is Nothing Then
+        Set comparisonSheet = ThisWorkbook.Sheets.Add
+        comparisonSheet.Name = "Comparison over Time"
+    End If
+    comparisonSheet.Cells.Clear
+    
+    ' Initialize data storage
+    Set firstHalfData = CreateObject("Scripting.Dictionary")
+    Set secondHalfData = CreateObject("Scripting.Dictionary")
+    
+    ' Extract data from combined plots in each sheet
+    For Each ws In ThisWorkbook.Sheets
+        If ws.Name <> "Comparison over Time" Then
+            ' Extract data from combined "First Half" plot
+            For Each chartObj In ws.ChartObjects
+                If chartObj.Chart.HasTitle Then
+                    If chartObj.Chart.ChartTitle.Text = "First Half" Then
+                        For Each series In chartObj.Chart.SeriesCollection
+                            dataTitle = series.Name
+                            sheetName = ws.Name
+                            If Not firstHalfData.exists(dataTitle) Then
+                                Set firstHalfData(dataTitle) = CreateObject("Scripting.Dictionary")
+                            End If
+                            firstHalfData(dataTitle)(sheetName) = Array(series.XValues, series.Values)
+                        Next series
+                    ElseIf chartObj.Chart.ChartTitle.Text = "Second Half" Then
+                        For Each series In chartObj.Chart.SeriesCollection
+                            dataTitle = series.Name
+                            sheetName = ws.Name
+                            If Not secondHalfData.exists(dataTitle) Then
+                                Set secondHalfData(dataTitle) = CreateObject("Scripting.Dictionary")
+                            End If
+                            secondHalfData(dataTitle)(sheetName) = Array(series.XValues, series.Values)
+                        Next series
+                    End If
+                End If
+            Next chartObj
+        End If
+    Next ws
+    
+    ' Create plots in the "Comparison over Time" sheet
+    chartTop = 20
+    chartLeft = 20
+    For Each dataTitle In firstHalfData.keys
+        ' Create "First Half" chart
+        Set chartObj = comparisonSheet.ChartObjects.Add(Left:=chartLeft, Width:=500, Top:=chartTop, Height:=300)
+        chartObj.Chart.ChartType = xlLine
+        chartObj.Chart.HasTitle = True
+        chartObj.Chart.ChartTitle.Text = dataTitle & " First Half"
+        
+        For Each sheetName In firstHalfData(dataTitle).keys
+            With chartObj.Chart.SeriesCollection.NewSeries
+                .XValues = firstHalfData(dataTitle)(sheetName)(0)
+                .Values = firstHalfData(dataTitle)(sheetName)(1)
+                .Name = sheetName
+            End With
+        Next sheetName
+        
+        ' Create "Second Half" chart
+        chartTop = chartTop + 320
+        Set chartObj = comparisonSheet.ChartObjects.Add(Left:=chartLeft, Width:=500, Top:=chartTop, Height:=300)
+        chartObj.Chart.ChartType = xlLine
+        chartObj.Chart.HasTitle = True
+        chartObj.Chart.ChartTitle.Text = dataTitle & " Second Half"
+        
+        For Each sheetName In secondHalfData(dataTitle).keys
+            With chartObj.Chart.SeriesCollection.NewSeries
+                .XValues = secondHalfData(dataTitle)(sheetName)(0)
+                .Values = secondHalfData(dataTitle)(sheetName)(1)
+                .Name = sheetName
+            End With
+        Next sheetName
+        
+        ' Move to the next column
+        chartTop = 20
+        chartLeft = chartLeft + 520
+    Next dataTitle
+End Sub

@@ -1,0 +1,97 @@
+Sub ExtractChartDataFromSheet()
+    Dim ws As Worksheet
+    Dim chartObj As ChartObject
+    Dim cht As Chart
+    Dim srs As Series
+    Dim XValues As Variant, YValues As Variant
+    Dim legendName As String
+    Dim outputWb As Workbook
+    Dim outputWs As Worksheet
+    Dim sheetName As String
+    Dim chartTitle As String
+    Dim outputFilePath As String
+    Dim nextCol As Long
+    Dim i As Long
+
+    ' Prompt for inputs
+    sheetName = "Peak Aligned Plots"
+    chartTitle = "PS vs Time"
+
+    If sheetName = "" Or chartTitle = "" Then
+        MsgBox "? Sheet name and chart title are required.", vbExclamation
+        Exit Sub
+    End If
+
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets(sheetName)
+    On Error GoTo 0
+    If ws Is Nothing Then
+        MsgBox "? Sheet '" & sheetName & "' not found.", vbCritical
+        Exit Sub
+    End If
+
+    ' Find the chart
+    Set cht = Nothing
+    For Each chartObj In ws.ChartObjects
+        If chartObj.Chart.HasTitle Then
+            If chartObj.Chart.chartTitle.Text = chartTitle Then
+                Set cht = chartObj.Chart
+                Exit For
+            End If
+        End If
+    Next chartObj
+
+    If cht Is Nothing Then
+        MsgBox "? Chart titled '" & chartTitle & "' not found in sheet '" & sheetName & "'.", vbCritical
+        Exit Sub
+    End If
+
+    ' Define file path
+    outputFilePath = "C:/Users/Frank/Desktop/Extracted Data.xlsx"  'change it to a excel file !!!
+
+
+    On Error Resume Next
+    Set outputWb = Workbooks.Open(outputFilePath)
+    On Error GoTo 0
+
+    If outputWb Is Nothing Then
+        MsgBox "? Please create a blank file named 'Extracted Data.xlsx' on your Desktop first.", vbCritical
+        Exit Sub
+    End If
+
+    ' Clean sheet name
+    Dim cleanSheetName As String
+    cleanSheetName = Replace(ThisWorkbook.Name, " ", "")
+
+    On Error Resume Next
+    Set outputWs = outputWb.Sheets(cleanSheetName)
+    If Not outputWs Is Nothing Then
+        Application.DisplayAlerts = False
+        outputWs.Delete
+        Application.DisplayAlerts = True
+    End If
+    On Error GoTo 0
+
+    Set outputWs = outputWb.Sheets.Add(After:=outputWb.Sheets(outputWb.Sheets.Count))
+    outputWs.Name = cleanSheetName
+
+    ' Extract series
+    nextCol = 1
+    For Each srs In cht.SeriesCollection
+        legendName = srs.Name
+
+        YValues = srs.Values
+
+        outputWs.Cells(1, nextCol).Value = legendName
+
+
+        For i = 1 To UBound(YValues)
+            outputWs.Cells(i + 1, nextCol).Value = YValues(i)
+
+        Next i
+
+        nextCol = nextCol + 1
+    Next srs
+
+    MsgBox "? Data extracted and saved to your Desktop.", vbInformation
+End Sub

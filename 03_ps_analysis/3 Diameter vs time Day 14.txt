@@ -1,0 +1,150 @@
+Sub PlotPeakDiameterVsTime()
+    Dim peakWS As Worksheet
+    Dim chartObj As ChartObject, srs As series
+    Dim Xs As Variant, Ys As Variant
+    Dim i As Long, j As Long
+    Dim maxY As Double, thresholdY As Double
+    Dim XLeft As Double, XRight As Double
+    Dim diameter As Double
+    Dim timeVal As Variant, regionName As Variant
+    Dim regionDict As Object, timeList As Object
+    Dim chartTop As Double: chartTop = 20
+    Dim chartHeight As Double: chartHeight = 300
+    Dim chartWidth As Double: chartWidth = 500
+
+    Set peakWS = ThisWorkbook.Sheets("Peak Aligned Plots")
+    Set regionDict = CreateObject("Scripting.Dictionary")
+
+    ' Loop through charts (each region)
+    For Each chartObj In peakWS.ChartObjects
+        regionName = chartObj.Chart.ChartTitle.Text
+        Set timeList = CreateObject("Scripting.Dictionary")
+
+        ' Loop through each time point series
+        For Each srs In chartObj.Chart.SeriesCollection
+            Xs = srs.XValues
+            Ys = srs.Values
+            
+            maxY = WorksheetFunction.Max(Ys)
+            thresholdY = 0.5 * maxY
+            
+    
+        Dim leftIdx As Long, rightIdx As Long
+        leftIdx = -1
+        rightIdx = -1
+    
+        ' Find last negative X (left of peak)
+        For i = LBound(Xs) To UBound(Xs)
+            If Xs(i) < 0 Then
+                leftIdx = i
+            ElseIf Xs(i) > 0 And rightIdx = -1 Then
+                rightIdx = i
+                Exit For
+            End If
+        Next i
+
+        If leftIdx = -1 Or rightIdx = -1 Then
+            Debug.Print "?? Skipping: could not find both left/right around X=0 for " & regionName & " - " & srs.Name
+            GoTo SkipSeries
+        End If
+
+
+            ' --- LEFT side ---
+            XLeft = -1
+            For i = leftIdx To LBound(Ys) + 1 Step -1
+                If Ys(i - 1) < thresholdY And Ys(i) >= thresholdY Then
+                    XLeft = Xs(i - 1) + ((thresholdY - Ys(i - 1)) * (Xs(i) - Xs(i - 1))) / (Ys(i) - Ys(i - 1))
+                    Exit For
+                End If
+            Next i
+
+            ' --- RIGHT side ---
+            XRight = -1
+            For i = rightIdx To UBound(Ys) - 1
+                If Ys(i) >= thresholdY And Ys(i + 1) < thresholdY Then
+                    XRight = Xs(i) + ((thresholdY - Ys(i)) * (Xs(i + 1) - Xs(i))) / (Ys(i + 1) - Ys(i))
+                    Exit For
+                End If
+            Next i
+
+            ' If both sides found, calculate diameter
+            If XLeft <> -1 And XRight <> -1 Then
+                diameter = Abs(XLeft) + Abs(XRight)
+                timeVal = Val(Replace(srs.Name, " hr", ""))
+                timeList(timeVal) = diameter
+                Debug.Print "Region: " & regionName & ", Time: " & srs.Name & ", Diameter: " & diameter
+            End If
+SkipSeries:
+        Next srs
+
+        ' Save this region's time vs diameter data
+        If Not regionDict.Exists(regionName) Then
+            regionDict.Add regionName, timeList
+        Else
+            Set regionDict(regionName) = timeList
+        End If
+    Next chartObj
+
+    ' Plot diameter vs time chart NEXT TO the aligned plots
+    Dim chartLeft As Double
+    chartLeft = chartWidth + 50 ' Plot to the right of existing stack
+
+    Dim chartObjFinal As ChartObject
+    Set chartObjFinal = peakWS.ChartObjects.Add(Left:=chartLeft, Width:=chartWidth, Top:=chartTop, Height:=chartHeight)
+    With chartObjFinal.Chart
+        .ChartType = xlXYScatterLines
+        .HasTitle = True
+        .ChartTitle.Text = "Peak Diameter vs Time (Half Max)"
+    End With
+
+    ' Plot all region series
+    For Each regionName In regionDict.Keys
+        Set timeList = regionDict(regionName)
+        If timeList.Count > 0 Then
+            ' Sort time points (just in case)
+            Dim sortedKeys() As Double
+            ReDim sortedKeys(1 To timeList.Count)
+            i = 1
+            For Each timeVal In timeList.Keys
+                sortedKeys(i) = timeVal
+                i = i + 1
+            Next timeVal
+            ' Sort array
+            Call BubbleSort(sortedKeys)
+
+            ' Load sorted data
+            Dim tArr() As Double, dArr() As Double
+            ReDim tArr(1 To timeList.Count)
+            ReDim dArr(1 To timeList.Count)
+            For i = 1 To timeList.Count
+                tArr(i) = sortedKeys(i)
+                dArr(i) = timeList(sortedKeys(i))
+            Next i
+
+            ' Add to chart
+            With chartObjFinal.Chart.SeriesCollection.NewSeries
+                .XValues = tArr
+                .Values = dArr
+                .Name = regionName
+            End With
+        End If
+    Next regionName
+
+    MsgBox "? Peak diameter vs time plot added next to aligned plots!", vbInformation
+End Sub
+
+' --- Simple Bubble Sort to ensure time values plot correctly
+Sub BubbleSort(arr() As Double)
+    Dim i As Long, j As Long, temp As Double
+    For i = LBound(arr) To UBound(arr) - 1
+        For j = i + 1 To UBound(arr)
+            If arr(i) > arr(j) Then
+                temp = arr(i)
+                arr(i) = arr(j)
+                arr(j) = temp
+            End If
+        Next j
+    Next i
+End Sub
+
+
